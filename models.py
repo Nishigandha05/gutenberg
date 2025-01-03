@@ -3,39 +3,47 @@ from flask import Flask, jsonify, request
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from urllib.parse import urlparse
+import logging
 
 app = Flask(__name__)
 
-# Database connection parameters
-DATABASE_URL = os.environ.get('DATABASE_URL')
+# At the top of your file, add logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-if DATABASE_URL:
-    # Handle Heroku/Render style DATABASE_URL
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    
-    url = urlparse(DATABASE_URL)
-    db_config = {
-        'dbname': url.path[1:],
-        'user': url.username,
-        'password': url.password,
-        'host': url.hostname,
-        'port': url.port
-    }
-else:
-    # Local database configuration
-    db_config = {
-        "host": "127.0.0.1",
-        "database": "gutenberg",
-        "user": "nishigandha05",
-        "password": 'nishi7456',
-    }
+# Database connection parameters
+def get_db_connection():
+    try:
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        if not DATABASE_URL:
+            logger.error("DATABASE_URL not found in environment variables")
+            raise ValueError("DATABASE_URL environment variable is not set")
+
+        if DATABASE_URL.startswith("postgres://"):
+            DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+        
+        url = urlparse(DATABASE_URL)
+        db_config = {
+            'dbname': url.path[1:],
+            'user': url.username,
+            'password': url.password,
+            'host': url.hostname,
+            'port': url.port
+        }
+        
+        connection = psycopg2.connect(**db_config)
+        return connection
+    except Exception as e:
+        logger.error(f"Database connection error: {e}")
+        return None
 
 #Function to retrieve data from database
 def get_books_from_db(page=1, per_page=25, book_ids=None, languages=None, mime_types=None, 
                      topics=None, authors=None, titles=None):
-    #connect to database
-    connection = psycopg2.connect(**db_config)
+    connection = get_db_connection()
+    if not connection:
+        raise Exception("Could not connect to database")
+    
     cursor = connection.cursor(cursor_factory = RealDictCursor)
 
     # Base query
