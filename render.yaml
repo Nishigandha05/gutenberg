@@ -7,8 +7,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.16
-      - key: FLASK_APP
-        value: models.py
     buildEnv:
       - key: PYTHON_VERSION
         value: 3.9.16
