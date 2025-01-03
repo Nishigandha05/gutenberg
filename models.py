@@ -271,15 +271,18 @@ def get_books():
 @app.route('/')
 def index():
     try:
-        # Test database connection
-        connection = psycopg2.connect(**db_config)
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        if not DATABASE_URL:
+            return "DATABASE_URL not found", 500
+            
+        connection = psycopg2.connect(DATABASE_URL)
+        cursor = connection.cursor()
+        cursor.execute('SELECT 1')
+        cursor.close()
         connection.close()
-        return "API is running and database connection is successful"
+        return "Database connection successful!"
     except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'message': 'Database connection failed'
-        }), 500
+        return f"Database error: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(debug=True)
