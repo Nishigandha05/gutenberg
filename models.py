@@ -34,153 +34,166 @@ else:
 #Function to retrieve data from database
 def get_books_from_db(page=1, per_page=25, book_ids=None, languages=None, mime_types=None, 
                      topics=None, authors=None, titles=None):
-    #connect to database
-    connection = psycopg2.connect(**db_config)
-    cursor = connection.cursor(cursor_factory = RealDictCursor)
+    try:
+        # Set shorter timeout and add error handling
+        connection = psycopg2.connect(
+            **db_config,
+            connect_timeout=10,  # 10 seconds connection timeout
+            options='-c statement_timeout=15000'  # 15 seconds query timeout
+        )
+        cursor = connection.cursor(cursor_factory=RealDictCursor)
 
-    # Base query
-    base_query = """
-        SELECT 
-            bb.title,
-            bb.gutenberg_id,
-            bb.download_count,
-            json_build_object(
-                'name', ba.name,
-                'birth_year', ba.birth_year,
-                'death_year', ba.death_year,
-                'id', ba.id
-            ) as author_info,
-            bl.code as language,
-            STRING_AGG(DISTINCT bs.name, ', ') as subjects,
-            STRING_AGG(DISTINCT bbk.name, ', ') as bookshelves,
-            json_agg(
-                DISTINCT jsonb_build_object(
-                    'mime_type', bf.mime_type,
-                    'url', bf.url
-                )
-            ) as download_links
-        FROM books_book as bb
-        LEFT JOIN books_book_authors as bba 
-            ON bb.gutenberg_id = bba.book_id
-        LEFT JOIN books_author as ba 
-            ON ba.id = bba.author_id
-        LEFT JOIN books_book_languages as bbl 
-            ON bb.gutenberg_id = bbl.book_id
-        LEFT JOIN books_language as bl 
-            ON bbl.language_id = bl.id
-        LEFT JOIN books_book_subjects as bbs 
-            ON bb.gutenberg_id = bbs.book_id
-        LEFT JOIN books_subject as bs 
-            ON bbs.subject_id = bs.id
-        LEFT JOIN books_book_bookshelves as bbb
-            ON bb.gutenberg_id = bbb.book_id
-        LEFT JOIN books_bookshelf as bbk
-            ON bbb.bookshelf_id = bbk.id
-        LEFT JOIN books_format as bf
-            ON bb.gutenberg_id = bf.book_id
-        WHERE 1=1
-    """
-    
-    # Build where clause for filtering
-    where_conditions = []
-    params = []
+        # Limit initial query size
+        per_page = min(per_page, 50)  # Maximum 50 items per page
+        
+        # Base query
+        base_query = """
+            SELECT 
+                bb.title,
+                bb.gutenberg_id,
+                bb.download_count,
+                json_build_object(
+                    'name', ba.name,
+                    'birth_year', ba.birth_year,
+                    'death_year', ba.death_year,
+                    'id', ba.id
+                ) as author_info,
+                bl.code as language,
+                STRING_AGG(DISTINCT bs.name, ', ') as subjects,
+                STRING_AGG(DISTINCT bbk.name, ', ') as bookshelves,
+                json_agg(
+                    DISTINCT jsonb_build_object(
+                        'mime_type', bf.mime_type,
+                        'url', bf.url
+                    )
+                ) as download_links
+            FROM books_book as bb
+            LEFT JOIN books_book_authors as bba 
+                ON bb.gutenberg_id = bba.book_id
+            LEFT JOIN books_author as ba 
+                ON ba.id = bba.author_id
+            LEFT JOIN books_book_languages as bbl 
+                ON bb.gutenberg_id = bbl.book_id
+            LEFT JOIN books_language as bl 
+                ON bbl.language_id = bl.id
+            LEFT JOIN books_book_subjects as bbs 
+                ON bb.gutenberg_id = bbs.book_id
+            LEFT JOIN books_subject as bs 
+                ON bbs.subject_id = bs.id
+            LEFT JOIN books_book_bookshelves as bbb
+                ON bb.gutenberg_id = bbb.book_id
+            LEFT JOIN books_bookshelf as bbk
+                ON bbb.bookshelf_id = bbk.id
+            LEFT JOIN books_format as bf
+                ON bb.gutenberg_id = bf.book_id
+            WHERE 1=1
+        """
+        
+        # Build where clause for filtering
+        where_conditions = []
+        params = []
 
-    if book_ids:
-        where_conditions.append("bb.gutenberg_id = ANY(%s)")
-        params.append(book_ids)
+        if book_ids:
+            where_conditions.append("bb.gutenberg_id = ANY(%s)")
+            params.append(book_ids)
 
-    if languages:
-        where_conditions.append("bl.code = ANY(%s)")
-        params.append(languages)
+        if languages:
+            where_conditions.append("bl.code = ANY(%s)")
+            params.append(languages)
 
-    if mime_types:
-        where_conditions.append("bf.mime_type = ANY(%s)")
-        params.append(mime_types)
+        if mime_types:
+            where_conditions.append("bf.mime_type = ANY(%s)")
+            params.append(mime_types)
 
-    if topics:
-        topic_conditions = []
-        for topic in topics:
-            topic_param = f"%{topic.lower()}%"
-            topic_conditions.append("""
-                (LOWER(bs.name) LIKE %s 
-                OR LOWER(bbk.name) LIKE %s)
-            """)
-            params.extend([topic_param, topic_param])
-        if topic_conditions:
-            where_conditions.append(f"({' OR '.join(topic_conditions)})")
+        if topics:
+            topic_conditions = []
+            for topic in topics:
+                topic_param = f"%{topic.lower()}%"
+                topic_conditions.append("""
+                    (LOWER(bs.name) LIKE %s 
+                    OR LOWER(bbk.name) LIKE %s)
+                """)
+                params.extend([topic_param, topic_param])
+            if topic_conditions:
+                where_conditions.append(f"({' OR '.join(topic_conditions)})")
 
-    if authors:
-        author_conditions = []
-        for author in authors:
-            author_param = f"%{author.lower()}%"
-            author_conditions.append("LOWER(ba.name) LIKE %s")
-            params.append(author_param)
-        if author_conditions:
-            where_conditions.append(f"({' OR '.join(author_conditions)})")
+        if authors:
+            author_conditions = []
+            for author in authors:
+                author_param = f"%{author.lower()}%"
+                author_conditions.append("LOWER(ba.name) LIKE %s")
+                params.append(author_param)
+            if author_conditions:
+                where_conditions.append(f"({' OR '.join(author_conditions)})")
 
-    if titles:
-        title_conditions = []
-        for title in titles:
-            title_param = f"%{title.lower()}%"
-            title_conditions.append("LOWER(bb.title) LIKE %s")
-            params.append(title_param)
-        if title_conditions:
-            where_conditions.append(f"({' OR '.join(title_conditions)})")
+        if titles:
+            title_conditions = []
+            for title in titles:
+                title_param = f"%{title.lower()}%"
+                title_conditions.append("LOWER(bb.title) LIKE %s")
+                params.append(title_param)
+            if title_conditions:
+                where_conditions.append(f"({' OR '.join(title_conditions)})")
 
-    # Add where conditions to base query
-    if where_conditions:
-        base_query += " AND " + " AND ".join(where_conditions)
+        # Add where conditions to base query
+        if where_conditions:
+            base_query += " AND " + " AND ".join(where_conditions)
 
-    # Add GROUP BY for aggregations
-    base_query += """
-        GROUP BY 
-            bb.title,
-            bb.gutenberg_id,
-            bb.download_count,
-            ba.name,
-            ba.birth_year,
-            ba.death_year,
-            ba.id,
-            bl.code
-    """
+        # Add GROUP BY for aggregations
+        base_query += """
+            GROUP BY 
+                bb.title,
+                bb.gutenberg_id,
+                bb.download_count,
+                ba.name,
+                ba.birth_year,
+                ba.death_year,
+                ba.id,
+                bl.code
+        """
 
-    # Get total count of unique books with filters
-    count_query = """
-        SELECT COUNT(DISTINCT bb.gutenberg_id) 
-        FROM books_book as bb
-        LEFT JOIN books_book_authors as bba ON bb.gutenberg_id = bba.book_id
-        LEFT JOIN books_author as ba ON ba.id = bba.author_id
-        LEFT JOIN books_book_languages as bbl ON bb.gutenberg_id = bbl.book_id
-        LEFT JOIN books_language as bl ON bbl.language_id = bl.id
-        LEFT JOIN books_book_subjects as bbs ON bb.gutenberg_id = bbs.book_id
-        LEFT JOIN books_subject as bs ON bbs.subject_id = bs.id
-        LEFT JOIN books_book_bookshelves as bbb ON bb.gutenberg_id = bbb.book_id
-        LEFT JOIN books_bookshelf as bbk ON bbb.bookshelf_id = bbk.id
-        LEFT JOIN books_format as bf ON bb.gutenberg_id = bf.book_id
-        WHERE 1=1
-    """
-    
-    if where_conditions:
-        count_query += " AND " + " AND ".join(where_conditions)
-    
-    cursor.execute(count_query, params)
-    total_count = cursor.fetchone()['count']
+        # Get total count of unique books with filters
+        count_query = """
+            SELECT COUNT(DISTINCT bb.gutenberg_id) 
+            FROM books_book as bb
+            LEFT JOIN books_book_authors as bba ON bb.gutenberg_id = bba.book_id
+            LEFT JOIN books_author as ba ON ba.id = bba.author_id
+            LEFT JOIN books_book_languages as bbl ON bb.gutenberg_id = bbl.book_id
+            LEFT JOIN books_language as bl ON bbl.language_id = bl.id
+            LEFT JOIN books_book_subjects as bbs ON bb.gutenberg_id = bbs.book_id
+            LEFT JOIN books_subject as bs ON bbs.subject_id = bs.id
+            LEFT JOIN books_book_bookshelves as bbb ON bb.gutenberg_id = bbb.book_id
+            LEFT JOIN books_bookshelf as bbk ON bbb.bookshelf_id = bbk.id
+            LEFT JOIN books_format as bf ON bb.gutenberg_id = bf.book_id
+            WHERE 1=1
+        """
+        
+        if where_conditions:
+            count_query += " AND " + " AND ".join(where_conditions)
+        
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()['count']
 
-    # Add ordering and pagination to main query
-    base_query += " ORDER BY bb.download_count DESC NULLS LAST"
-    base_query += " LIMIT %s OFFSET %s"
-    
-    # Add pagination parameters
-    offset = (page - 1) * per_page
-    params.extend([per_page, offset])
+        # Add ordering and pagination to main query
+        base_query += " ORDER BY bb.download_count DESC NULLS LAST"
+        base_query += " LIMIT %s OFFSET %s"
+        
+        # Add pagination parameters
+        offset = (page - 1) * per_page
+        params.extend([per_page, offset])
 
-    cursor.execute(base_query, params)
-    books = cursor.fetchall()
+        cursor.execute(base_query, params)
+        books = cursor.fetchall()
 
-    cursor.close()
-    connection.close()
-
-    return total_count, books
+        return total_count, books
+    except psycopg2.Error as e:
+        print(f"Database error: {e}")
+        return 0, []
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals():
+            connection.close()
 
 @app.route('/get_books')
 def get_books():
