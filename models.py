@@ -270,7 +270,6 @@ def get_books():
 
 @app.route('/')
 def index():
-    try:
         DATABASE_URL = os.environ.get('DATABASE_URL')
         if not DATABASE_URL:
             return "DATABASE_URL not found", 500
@@ -281,8 +280,6 @@ def index():
         cursor.close()
         connection.close()
         return "Database connection successful!"
-    except Exception as e:
-        return f"Database error: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(debug=True)
