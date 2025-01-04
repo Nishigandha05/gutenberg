@@ -198,11 +198,14 @@ def get_books():
             formatted_book = {
                 'title': book['title'],
                 'gutenberg_id': book['gutenberg_id'],
-                'author': book['author_info'],
+                'author': {
+                    'name': book['author_name'],
+                    'birth_year': book['birth_year'],
+                    'death_year': book['death_year'],
+                    'id': book['author_id']
+                },
                 'language': book['language'],
                 'subjects': [s.strip() for s in book['subjects'].split(',')] if book['subjects'] else [],
-                'bookshelves': [b.strip() for b in book['bookshelves'].split(',')] if book['bookshelves'] else [],
-                'download_links': book['download_links'] if book['download_links'] else []
             }
             formatted_books.append(formatted_book)
 
