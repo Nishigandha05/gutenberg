@@ -114,31 +114,35 @@ class TestGutenbergAPI(unittest.TestCase):
             data = json.loads(response.data)
             self.assertTrue(len(data['books']) > 0)
 
-    def test_empty_results(self):
+    @patch('models.get_books_from_db')
+    def test_empty_results(self, mock_db):
         """Test handling of no results"""
-        with patch('models.get_books_from_db') as mock_db:
-            mock_db.return_value = (0, [])
-            
-            response = self.app.get('/get_books?title=nonexistentbook123456')
-            self.assertEqual(response.status_code, 200)
-            
-            data = json.loads(response.data)
-            self.assertEqual(data['total_books'], 0)
-            self.assertEqual(len(data['books']), 0)
+        # Mock the database to return empty results
+        mock_db.return_value = (0, [])
+        
+        response = self.app.get('/get_books?title=nonexistentbook123456')
+        self.assertEqual(response.status_code, 200)
+        
+        data = json.loads(response.data)
+        self.assertEqual(data['total_books'], 0)
+        self.assertEqual(len(data['books']), 0)
 
-    def test_invalid_parameters(self):
+    @patch('models.get_books_from_db')
+    def test_invalid_parameters(self, mock_db):
         """Test handling of invalid parameters"""
-        with patch('models.get_books_from_db') as mock_db:
-            mock_db.return_value = (1, [self.mock_book])
-            
-            # Test invalid page number
-            response = self.app.get('/get_books?page=0')
-            self.assertEqual(response.status_code, 200)
-            
-            # Test invalid per_page
-            response = self.app.get('/get_books?per_page=1000')
-            data = json.loads(response.data)
-            self.assertTrue(data['pagination']['per_page'] <= 100)
+        # Mock successful database response
+        mock_db.return_value = (1, [self.mock_book])
+        
+        # Test invalid page number
+        response = self.app.get('/get_books?page=0')
+        data = json.loads(response.data)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data['pagination']['page'] >= 1)
+        
+        # Test invalid per_page
+        response = self.app.get('/get_books?per_page=1000')
+        data = json.loads(response.data)
+        self.assertTrue(data['pagination']['per_page'] <= 100)
 
 if __name__ == '__main__':
     unittest.main()

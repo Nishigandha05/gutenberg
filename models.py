@@ -323,16 +323,11 @@ def get_books_from_db(page=1, per_page=25, book_ids=None, languages=None, mime_t
 })
 def get_books():
     try:
-        # Add debug logging
-        print("Attempting database connection...")
-        connection = psycopg2.connect(**db_config)
-        print("Database connection successful")
-        
-        # Get pagination parameters
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 25, type=int)
+        # Get and validate pagination parameters
+        page = max(1, request.args.get('page', 1, type=int))
+        per_page = min(max(1, request.args.get('per_page', 25, type=int)), 100)
 
-    # Get filter parameters
+        # Get filter parameters
         book_ids = request.args.getlist('book_id', type=int)
         languages = request.args.getlist('language')
         mime_types = request.args.getlist('mime_type')
@@ -340,17 +335,15 @@ def get_books():
         authors = request.args.getlist('author')
         titles = request.args.getlist('title')
 
-        # If no filters are applied, add a default filter
-        if not any([book_ids, languages, mime_types, topics, authors, titles]):
-            # Add default sorting by download count
-            total_count, books = get_books_from_db(
-                page=page,
-                per_page=per_page,
-                languages=['en']  # Default to English books
-            )
-        else:
-            # Use provided filters
-            total_count, books = get_books_from_db(
+        # Split comma-separated values
+        languages = [lang for langs in languages for lang in langs.split(',')]
+        mime_types = [mime for mimes in mime_types for mime in mimes.split(',')]
+        topics = [topic.strip() for topics_list in topics for topic in topics_list.split(',')]
+        authors = [author.strip() for authors_list in authors for author in authors_list.split(',')]
+        titles = [title.strip() for titles_list in titles for title in titles_list.split(',')]
+
+        # Get filtered books
+        total_count, books = get_books_from_db(
             page=page,
             per_page=per_page,
             book_ids=book_ids if book_ids else None,
@@ -359,7 +352,7 @@ def get_books():
             topics=topics if topics else None,
             authors=authors if authors else None,
             titles=titles if titles else None
-    )
+        )
 
         # Format the books data
         formatted_books = []
