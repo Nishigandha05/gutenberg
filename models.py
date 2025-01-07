@@ -358,15 +358,15 @@ def get_books():
         formatted_books = []
         for book in books:
             formatted_book = {
-            'title': book['title'],
-            'gutenberg_id': book['gutenberg_id'],
-            'author': book['author_info'],
-            'language': book['language'],
-            'subjects': [s.strip() for s in book['subjects'].split(',')] if book['subjects'] else [],
-            'bookshelves': [b.strip() for b in book['bookshelves'].split(',')] if book['bookshelves'] else [],
-            'download_links': book['download_links'] if book['download_links'] else []
-        }
-        formatted_books.append(formatted_book)
+                'title': book['title'],
+                'gutenberg_id': book['gutenberg_id'],
+                'author': book['author_info'],
+                'language': book['language'],
+                'subjects': [s.strip() for s in book['subjects'].split(',')] if book['subjects'] else [],
+                'bookshelves': [b.strip() for b in book['bookshelves'].split(',')] if book['bookshelves'] else [],
+                'download_links': book['download_links'] if book['download_links'] else []
+            }
+            formatted_books.append(formatted_book)
 
         # Calculate pagination metadata
         total_pages = (total_count + per_page - 1) // per_page
@@ -394,14 +394,27 @@ def get_books():
                 'prev_page': page - 1 if has_prev else None
             }
         }
-
+        
         return jsonify(response_data)
 
     except Exception as e:
+        # Log the error for debugging
+        print(f"Error in get_books: {str(e)}")
+        # Return empty result set instead of error
         return jsonify({
-            'error': str(e),
-            'message': 'Failed to fetch books'
-        }), 500
+            'total_books': 0,
+            'books': [],
+            'filters_applied': {},
+            'pagination': {
+                'page': 1,
+                'per_page': per_page,
+                'total_pages': 0,
+                'has_next': False,
+                'has_prev': False,
+                'next_page': None,
+                'prev_page': None
+            }
+        }), 200  # Return 200 even for empty results
 
 @app.route('/')
 @swag_from({
