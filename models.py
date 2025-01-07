@@ -200,8 +200,6 @@ def get_books_from_db(page=1, per_page=25, book_ids=None, languages=None, mime_t
     return total_count, books
 
 @app.route('/get_books')
-
-
 @swag_from({
     'tags': ['Books'],
     'summary': 'Get books from Project Gutenberg',
@@ -323,51 +321,50 @@ def get_books_from_db(page=1, per_page=25, book_ids=None, languages=None, mime_t
         }
     }
 })
-
-
-
-
-
 def get_books():
-    # Get pagination parameters
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 25, type=int)
+    try:
+        # Add debug logging
+        print("Attempting database connection...")
+        connection = psycopg2.connect(**db_config)
+        print("Database connection successful")
+        
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 25, type=int)
 
     # Get filter parameters
-    book_ids = request.args.getlist('book_id', type=int)
-    languages = request.args.getlist('language')
-    mime_types = request.args.getlist('mime_type')
-    topics = request.args.getlist('topic')
-    authors = request.args.getlist('author')
-    titles = request.args.getlist('title')
+        book_ids = request.args.getlist('book_id', type=int)
+        languages = request.args.getlist('language')
+        mime_types = request.args.getlist('mime_type')
+        topics = request.args.getlist('topic')
+        authors = request.args.getlist('author')
+        titles = request.args.getlist('title')
 
-    # Split comma-separated values
-    languages = [lang for langs in languages for lang in langs.split(',')]
-    mime_types = [mime for mimes in mime_types for mime in mimes.split(',')]
-    topics = [topic.strip() for topics_list in topics for topic in topics_list.split(',')]
-    authors = [author.strip() for authors_list in authors for author in authors_list.split(',')]
-    titles = [title.strip() for titles_list in titles for title in titles_list.split(',')]
-
-    # Validate parameters
-    page = max(1, page)
-    per_page = min(max(1, per_page), 100)
-
-    # Get filtered books
-    total_count, books = get_books_from_db(
-        page=page,
-        per_page=per_page,
-        book_ids=book_ids if book_ids else None,
-        languages=languages if languages else None,
-        mime_types=mime_types if mime_types else None,
-        topics=topics if topics else None,
-        authors=authors if authors else None,
-        titles=titles if titles else None
+        # If no filters are applied, add a default filter
+        if not any([book_ids, languages, mime_types, topics, authors, titles]):
+            # Add default sorting by download count
+            total_count, books = get_books_from_db(
+                page=page,
+                per_page=per_page,
+                languages=['en']  # Default to English books
+            )
+        else:
+            # Use provided filters
+            total_count, books = get_books_from_db(
+            page=page,
+            per_page=per_page,
+            book_ids=book_ids if book_ids else None,
+            languages=languages if languages else None,
+            mime_types=mime_types if mime_types else None,
+            topics=topics if topics else None,
+            authors=authors if authors else None,
+            titles=titles if titles else None
     )
 
-    # Format the books data
-    formatted_books = []
-    for book in books:
-        formatted_book = {
+        # Format the books data
+        formatted_books = []
+        for book in books:
+            formatted_book = {
             'title': book['title'],
             'gutenberg_id': book['gutenberg_id'],
             'author': book['author_info'],
@@ -378,38 +375,42 @@ def get_books():
         }
         formatted_books.append(formatted_book)
 
-    # Calculate pagination metadata
-    total_pages = (total_count + per_page - 1) // per_page
-    has_next = page < total_pages
-    has_prev = page > 1
+        # Calculate pagination metadata
+        total_pages = (total_count + per_page - 1) // per_page
+        has_next = page < total_pages
+        has_prev = page > 1
 
-    response_data = {
-        'total_books': total_count,
-        'books': formatted_books,
-        'filters_applied': {
-            'book_ids': book_ids if book_ids else None,
-            'languages': languages if languages else None,
-            'mime_types': mime_types if mime_types else None,
-            'topics': topics if topics else None,
-            'authors': authors if authors else None,
-            'titles': titles if titles else None
-        },
-        'pagination': {
-            'page': page,
-            'per_page': per_page,
-            'total_pages': total_pages,
-            'has_next': has_next,
-            'has_prev': has_prev,
-            'next_page': page + 1 if has_next else None,
-            'prev_page': page - 1 if has_prev else None
+        response_data = {
+            'total_books': total_count,
+            'books': formatted_books,
+            'filters_applied': {
+                'book_ids': book_ids if book_ids else None,
+                'languages': languages if languages else None,
+                'mime_types': mime_types if mime_types else None,
+                'topics': topics if topics else None,
+                'authors': authors if authors else None,
+                'titles': titles if titles else None
+            },
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages,
+                'has_next': has_next,
+                'has_prev': has_prev,
+                'next_page': page + 1 if has_next else None,
+                'prev_page': page - 1 if has_prev else None
+            }
         }
-    }
-    
-    return jsonify(response_data)
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'message': 'Failed to fetch books'
+        }), 500
 
 @app.route('/')
-
-
 @swag_from({
     'tags': ['Health Check'],
     'summary': 'API health check and database connection test',
@@ -428,7 +429,6 @@ def get_books():
         }
     }
 })
-
 def index():
         DATABASE_URL = os.environ.get('DATABASE_URL')
         if not DATABASE_URL:
