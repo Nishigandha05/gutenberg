@@ -144,5 +144,56 @@ class TestGutenbergAPI(unittest.TestCase):
         data = json.loads(response.data)
         self.assertTrue(data['pagination']['per_page'] <= 100)
 
+    def test_database_connection(self):
+        """Test database connection endpoint"""
+        with patch('psycopg2.connect') as mock_connect:
+            mock_cursor = MagicMock()
+            mock_connect.return_value.cursor.return_value = mock_cursor
+            
+            response = self.app.get('/')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data.decode(), "Database connection successful!")
+
+    def test_database_url_missing(self):
+        """Test behavior when DATABASE_URL is missing"""
+        with patch('os.environ.get', return_value=None):
+            response = self.app.get('/')
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.data.decode(), "DATABASE_URL not found")
+
+    def test_filter_by_mime_type(self):
+        """Test filtering by mime type"""
+        with patch('models.get_books_from_db') as mock_db:
+            mock_book = self.mock_book.copy()
+            mock_book['download_links'] = [{'mime_type': 'text/html', 'url': 'test.html'}]
+            mock_db.return_value = (1, [mock_book])
+            
+            response = self.app.get('/get_books?mime_type=text/html')
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+            self.assertTrue(len(data['books']) > 0)
+
+    def test_filter_by_book_id(self):
+        """Test filtering by book ID"""
+        with patch('models.get_books_from_db') as mock_db:
+            mock_book = self.mock_book.copy()
+            mock_book['gutenberg_id'] = 1234
+            mock_db.return_value = (1, [mock_book])
+            
+            response = self.app.get('/get_books?book_id=1234')
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data)
+            self.assertEqual(data['books'][0]['gutenberg_id'], 1234)
+
+    def test_database_error_handling(self):
+        """Test handling of database errors"""
+        with patch('models.get_books_from_db', side_effect=Exception("Database error")):
+            response = self.app.get('/get_books')
+            self.assertEqual(response.status_code, 200)  # Should return 200 even on error
+            data = json.loads(response.data)
+            self.assertEqual(data['total_books'], 0)
+            self.assertEqual(len(data['books']), 0)
+            self.assertIn('pagination', data)
+
 if __name__ == '__main__':
     unittest.main()
