@@ -1,10 +1,32 @@
 import os
 from flask import Flask, jsonify, request
+from flasgger import Swagger, swag_from
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from urllib.parse import urlparse
 
 app = Flask(__name__)
+
+
+# Swagger configuration
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": 'apispec',
+            "route": '/apispec.json',
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/docs/"
+}
+
+swagger = Swagger(app, config=swagger_config)
+
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
@@ -178,6 +200,134 @@ def get_books_from_db(page=1, per_page=25, book_ids=None, languages=None, mime_t
     return total_count, books
 
 @app.route('/get_books')
+
+
+@swag_from({
+    'tags': ['Books'],
+    'summary': 'Get books from Project Gutenberg',
+    'parameters': [
+        {
+            'name': 'page',
+            'in': 'query',
+            'type': 'integer',
+            'default': 1,
+            'description': 'Page number'
+        },
+        {
+            'name': 'per_page',
+            'in': 'query',
+            'type': 'integer',
+            'default': 25,
+            'description': 'Items per page (max 100)'
+        },
+        {
+            'name': 'book_id',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'integer'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by Gutenberg book IDs'
+        },
+        {
+            'name': 'language',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by language codes (e.g., en,fr)'
+        },
+        {
+            'name': 'mime_type',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by mime types'
+        },
+        {
+            'name': 'topic',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by topics (searches both subjects and bookshelves)'
+        },
+        {
+            'name': 'author',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by author names (case-insensitive partial match)'
+        },
+        {
+            'name': 'title',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by book titles (case-insensitive partial match)'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Successful response',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'total_books': {'type': 'integer'},
+                    'books': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'title': {'type': 'string'},
+                                'gutenberg_id': {'type': 'integer'},
+                                'author': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'name': {'type': 'string'},
+                                        'birth_year': {'type': 'integer'},
+                                        'death_year': {'type': 'integer'},
+                                        'id': {'type': 'integer'}
+                                    }
+                                },
+                                'language': {'type': 'string'},
+                                'subjects': {'type': 'array', 'items': {'type': 'string'}},
+                                'bookshelves': {'type': 'array', 'items': {'type': 'string'}},
+                                'download_links': {
+                                    'type': 'array',
+                                    'items': {
+                                        'type': 'object',
+                                        'properties': {
+                                            'mime_type': {'type': 'string'},
+                                            'url': {'type': 'string'}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    'pagination': {
+                        'type': 'object',
+                        'properties': {
+                            'page': {'type': 'integer'},
+                            'per_page': {'type': 'integer'},
+                            'total_pages': {'type': 'integer'},
+                            'has_next': {'type': 'boolean'},
+                            'has_prev': {'type': 'boolean'}
+                        }
+                    }
+                }
+            }
+        }
+    }
+})
+
+
+
+
+
 def get_books():
     # Get pagination parameters
     page = request.args.get('page', 1, type=int)
@@ -258,6 +408,27 @@ def get_books():
     return jsonify(response_data)
 
 @app.route('/')
+
+
+@swag_from({
+    'tags': ['Health Check'],
+    'summary': 'API health check and database connection test',
+    'responses': {
+        '200': {
+            'description': 'Database connection successful',
+            'schema': {
+                'type': 'string'
+            }
+        },
+        '500': {
+            'description': 'Database connection failed',
+            'schema': {
+                'type': 'string'
+            }
+        }
+    }
+})
+
 def index():
         DATABASE_URL = os.environ.get('DATABASE_URL')
         if not DATABASE_URL:
