@@ -7,8 +7,6 @@ from psycopg2.extras import RealDictCursor
 from urllib.parse import urlparse
 
 app = Flask(__name__)
-
-
 # Swagger configuration
 swagger_config = {
     "headers": [],
@@ -200,6 +198,127 @@ def get_books_from_db(page=1, per_page=25, book_ids=None, languages=None, mime_t
     return total_count, books
 
 @app.route('/get_books')
+@swag_from({
+    'tags': ['Books'],
+    'summary': 'Get books from Project Gutenberg',
+    'parameters': [
+        {
+            'name': 'page',
+            'in': 'query',
+            'type': 'integer',
+            'default': 1,
+            'description': 'Page number'
+        },
+        {
+            'name': 'per_page',
+            'in': 'query',
+            'type': 'integer',
+            'default': 25,
+            'description': 'Items per page (max 100)'
+        },
+        {
+            'name': 'book_id',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'integer'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by Gutenberg book IDs'
+        },
+        {
+            'name': 'language',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by language codes (e.g., en,fr)'
+        },
+        {
+            'name': 'mime_type',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by mime types'
+        },
+        {
+            'name': 'topic',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by topics (searches both subjects and bookshelves)'
+        },
+        {
+            'name': 'author',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by author names (case-insensitive partial match)'
+        },
+        {
+            'name': 'title',
+            'in': 'query',
+            'type': 'array',
+            'items': {'type': 'string'},
+            'collectionFormat': 'csv',
+            'description': 'Filter by book titles (case-insensitive partial match)'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Successful response',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'total_books': {'type': 'integer'},
+                    'books': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'title': {'type': 'string'},
+                                'gutenberg_id': {'type': 'integer'},
+                                'author': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'name': {'type': 'string'},
+                                        'birth_year': {'type': 'integer'},
+                                        'death_year': {'type': 'integer'},
+                                        'id': {'type': 'integer'}
+                                    }
+                                },
+                                'language': {'type': 'string'},
+                                'subjects': {'type': 'array', 'items': {'type': 'string'}},
+                                'bookshelves': {'type': 'array', 'items': {'type': 'string'}},
+                                'download_links': {
+                                    'type': 'array',
+                                    'items': {
+                                        'type': 'object',
+                                        'properties': {
+                                            'mime_type': {'type': 'string'},
+                                            'url': {'type': 'string'}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    'pagination': {
+                        'type': 'object',
+                        'properties': {
+                            'page': {'type': 'integer'},
+                            'per_page': {'type': 'integer'},
+                            'total_pages': {'type': 'integer'},
+                            'has_next': {'type': 'boolean'},
+                            'has_prev': {'type': 'boolean'}
+                        }
+                    }
+                }
+            }
+        }
+    }
+})
 
 
 @swag_from({
@@ -329,87 +448,101 @@ def get_books_from_db(page=1, per_page=25, book_ids=None, languages=None, mime_t
 
 
 def get_books():
-    # Get pagination parameters
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 25, type=int)
+    try:
+        # Get and validate pagination parameters
+        page = max(1, request.args.get('page', 1, type=int))
+        per_page = min(max(1, request.args.get('per_page', 25, type=int)), 100)
 
-    # Get filter parameters
-    book_ids = request.args.getlist('book_id', type=int)
-    languages = request.args.getlist('language')
-    mime_types = request.args.getlist('mime_type')
-    topics = request.args.getlist('topic')
-    authors = request.args.getlist('author')
-    titles = request.args.getlist('title')
+        # Get filter parameters
+        book_ids = request.args.getlist('book_id', type=int)
+        languages = request.args.getlist('language')
+        mime_types = request.args.getlist('mime_type')
+        topics = request.args.getlist('topic')
+        authors = request.args.getlist('author')
+        titles = request.args.getlist('title')
 
-    # Split comma-separated values
-    languages = [lang for langs in languages for lang in langs.split(',')]
-    mime_types = [mime for mimes in mime_types for mime in mimes.split(',')]
-    topics = [topic.strip() for topics_list in topics for topic in topics_list.split(',')]
-    authors = [author.strip() for authors_list in authors for author in authors_list.split(',')]
-    titles = [title.strip() for titles_list in titles for title in titles_list.split(',')]
+        # Split comma-separated values
+        languages = [lang for langs in languages for lang in langs.split(',')]
+        mime_types = [mime for mimes in mime_types for mime in mimes.split(',')]
+        topics = [topic.strip() for topics_list in topics for topic in topics_list.split(',')]
+        authors = [author.strip() for authors_list in authors for author in authors_list.split(',')]
+        titles = [title.strip() for titles_list in titles for title in titles_list.split(',')]
 
-    # Validate parameters
-    page = max(1, page)
-    per_page = min(max(1, per_page), 100)
+        # Get filtered books
+        total_count, books = get_books_from_db(
+            page=page,
+            per_page=per_page,
+            book_ids=book_ids if book_ids else None,
+            languages=languages if languages else None,
+            mime_types=mime_types if mime_types else None,
+            topics=topics if topics else None,
+            authors=authors if authors else None,
+            titles=titles if titles else None
+        )
 
-    # Get filtered books
-    total_count, books = get_books_from_db(
-        page=page,
-        per_page=per_page,
-        book_ids=book_ids if book_ids else None,
-        languages=languages if languages else None,
-        mime_types=mime_types if mime_types else None,
-        topics=topics if topics else None,
-        authors=authors if authors else None,
-        titles=titles if titles else None
-    )
+        # Format the books data
+        formatted_books = []
+        for book in books:
+            formatted_book = {
+                'title': book['title'],
+                'gutenberg_id': book['gutenberg_id'],
+                'author': book['author_info'],
+                'language': book['language'],
+                'subjects': [s.strip() for s in book['subjects'].split(',')] if book['subjects'] else [],
+                'bookshelves': [b.strip() for b in book['bookshelves'].split(',')] if book['bookshelves'] else [],
+                'download_links': book['download_links'] if book['download_links'] else []
+            }
+            formatted_books.append(formatted_book)
 
-    # Format the books data
-    formatted_books = []
-    for book in books:
-        formatted_book = {
-            'title': book['title'],
-            'gutenberg_id': book['gutenberg_id'],
-            'author': book['author_info'],
-            'language': book['language'],
-            'subjects': [s.strip() for s in book['subjects'].split(',')] if book['subjects'] else [],
-            'bookshelves': [b.strip() for b in book['bookshelves'].split(',')] if book['bookshelves'] else [],
-            'download_links': book['download_links'] if book['download_links'] else []
+        # Calculate pagination metadata
+        total_pages = (total_count + per_page - 1) // per_page
+        has_next = page < total_pages
+        has_prev = page > 1
+
+        response_data = {
+            'total_books': total_count,
+            'books': formatted_books,
+            'filters_applied': {
+                'book_ids': book_ids if book_ids else None,
+                'languages': languages if languages else None,
+                'mime_types': mime_types if mime_types else None,
+                'topics': topics if topics else None,
+                'authors': authors if authors else None,
+                'titles': titles if titles else None
+            },
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages,
+                'has_next': has_next,
+                'has_prev': has_prev,
+                'next_page': page + 1 if has_next else None,
+                'prev_page': page - 1 if has_prev else None
+            }
         }
-        formatted_books.append(formatted_book)
+        
+        return jsonify(response_data)
 
-    # Calculate pagination metadata
-    total_pages = (total_count + per_page - 1) // per_page
-    has_next = page < total_pages
-    has_prev = page > 1
-
-    response_data = {
-        'total_books': total_count,
-        'books': formatted_books,
-        'filters_applied': {
-            'book_ids': book_ids if book_ids else None,
-            'languages': languages if languages else None,
-            'mime_types': mime_types if mime_types else None,
-            'topics': topics if topics else None,
-            'authors': authors if authors else None,
-            'titles': titles if titles else None
-        },
-        'pagination': {
-            'page': page,
-            'per_page': per_page,
-            'total_pages': total_pages,
-            'has_next': has_next,
-            'has_prev': has_prev,
-            'next_page': page + 1 if has_next else None,
-            'prev_page': page - 1 if has_prev else None
-        }
-    }
-    
-    return jsonify(response_data)
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error in get_books: {str(e)}")
+        # Return empty result set instead of error
+        return jsonify({
+            'total_books': 0,
+            'books': [],
+            'filters_applied': {},
+            'pagination': {
+                'page': 1,
+                'per_page': per_page,
+                'total_pages': 0,
+                'has_next': False,
+                'has_prev': False,
+                'next_page': None,
+                'prev_page': None
+            }
+        }), 200  # Return 200 even for empty results
 
 @app.route('/')
-
-
 @swag_from({
     'tags': ['Health Check'],
     'summary': 'API health check and database connection test',
